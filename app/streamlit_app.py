@@ -31,14 +31,37 @@ top_n = st.slider("Number of recommendations", 1, 5, 3)
 strict = st.checkbox("Use explicit venue type as a hard filter", value=True)
 
 if st.button("Recommend", type="primary"):
-    results, parsed = recommender.recommend(text, top_n=top_n, strict_venue_filter=strict)
+    results, parsed = recommender.recommend(
+        text,
+        top_n=top_n,
+        strict_venue_filter=strict
+    )
+
+    if parsed["budget_request"]:
+        st.warning(
+            "Budget preference detected. "
+            "The current dataset does not contain objective price-level information, "
+            "so affordability is not included in the ranking. "
+            "The Price dimension only represents review sentiment about price and value for money."
+        )
+
     st.subheader("Recommendations")
-    st.dataframe(results, use_container_width=True, hide_index=True)
+    st.dataframe(
+        results,
+        use_container_width=True,
+        hide_index=True
+    )
 
     with st.expander("How the preference was parsed"):
         st.write("Venue type:", parsed["venue_type"])
         st.write("Ignored dimensions:", parsed["ignored_dimensions"])
         st.write("Budget request detected:", parsed["budget_request"])
         st.json({k: round(v, 3) for k, v in parsed["weights"].items()})
-        if parsed["budget_request"]:
-            st.info("Budget/cheapness is detected but not scored yet, because the current Price dimension measures price/value sentiment rather than objective price level.")
+        with st.expander("How the preference was parsed"):
+            st.write("Venue type:", parsed["venue_type"])
+            st.write("Ignored dimensions:", parsed["ignored_dimensions"])
+            st.write("Budget request detected:", parsed["budget_request"])
+            st.json({
+                k: round(v, 3)
+                for k, v in parsed["weights"].items()
+            })

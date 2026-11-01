@@ -22,9 +22,10 @@ data/raw/*
 # Generated outputs
 outputs/*
 !outputs/README.md
-sentence_aspect_sentiment_predictions.csv
-review_aspect_profiles.csv
-place_aspect_profiles.csv
+!outputs/final_evaluation_summary.csv
+!outputs/final_aspect_per_class_metrics.csv
+!outputs/final_sentiment_per_class_metrics.csv
+!outputs/final_sentiment_confusion_matrix.csv
 
 # OS
 .DS_Store

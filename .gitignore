@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Models / large artifacts
+models/*.zip
+models/*/
+*.pt
+*.bin
+*.safetensors
+
+# Raw / large data
+data/raw/*
+!data/raw/README.md
+
+# Generated outputs
+outputs/*
+!outputs/README.md
+sentence_aspect_sentiment_predictions.csv
+review_aspect_profiles.csv
+place_aspect_profiles.csv
+
+# OS
+.DS_Store
+Thumbs.db

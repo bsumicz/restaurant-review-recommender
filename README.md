@@ -1,139 +1,671 @@
 # Restaurant Review Recommender
 
-Transformer-based aspect extraction, aspect-level sentiment analysis and personalized recommendation from restaurant, café and brunch reviews.
+Transformer-based aspect and sentiment analysis of restaurant reviews with personalized natural-language recommendations.
 
-## Project goal
+## Overview
 
-The project turns free-text reviews into interpretable place profiles and then matches those profiles to a user's natural-language preferences.
+This project builds an end-to-end NLP and recommendation pipeline for analyzing restaurant, café, and brunch-place reviews and generating personalized recommendations from natural-language user preferences.
 
-The core NLP components are fine-tuned DistilBERT models:
+The solution combines:
 
-- **multi-label aspect detection** on SemEval-2016 Restaurant reviews;
-- **application-compatible aspect-level sentiment classification** using `sentence + aspect` input.
+- **multi-label aspect detection** using DistilBERT;
+- **aspect-level sentiment classification** using DistilBERT;
+- aggregation of review-level predictions into interpretable **place profiles**;
+- a hybrid **natural-language preference parser**;
+- and a transparent **content-based recommendation engine**.
 
-The application layer aggregates predictions into support-adjusted place profiles and performs transparent content-based ranking.
+A user can describe what they are looking for in natural language, for example:
+
+> *“I want a cozy brunch place with great food and good service. Price is not important.”*
+
+The system interprets the request, identifies the relevant preference dimensions, filters suitable venue types, and returns a ranked Top-N recommendation.
+
+---
 
 ## Architecture
 
 ```text
-review text
-  -> sentence splitting
-  -> Transformer aspect detection
-  -> aspect-level sentiment
-  -> review-level aggregation
-  -> place profiles
-  -> natural-language preference parsing
-  -> weighted content-based ranking
-  -> Top-N recommendations
+SemEval-2016 Restaurant Reviews
+            │
+            ▼
+    Data Preparation
+            │
+            ├─────────────────────────┐
+            ▼                         ▼
+ Multi-label Aspect             Aspect-level
+     Detection                  Sentiment Model
+    DistilBERT                    DistilBERT
+            │                         │
+            └────────────┬────────────┘
+                         │
+                         ▼
+              Google Local Reviews
+                         │
+                         ▼
+              Sentence-level NLP
+                         │
+                         ▼
+              Review-level Aggregation
+                         │
+                         ▼
+                 Place Profiles
+        Food / Drinks / Service /
+      Ambience / Price / Location /
+                   Overall
+                         │
+                         ▼
+         Natural-language Preference
+                  Parsing
+                         │
+                         ▼
+          Content-based Matching
+                         │
+                         ▼
+          Top-N Personalized Results
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for the detailed flow.
+---
 
-## Repository structure
+## Main Components
+
+### 1. Aspect Detection
+
+The first Transformer component identifies which restaurant-related aspects are mentioned in a sentence.
+
+Example:
 
 ```text
-notebooks/
-  01_data_preparation.ipynb
-  02_aspect_detection.ipynb
-  03_sentiment_application.ipynb
-  04_google_local_data_preparation.ipynb
-  05_place_profile_generation.ipynb
-  06_personalized_recommendation.ipynb
-  07_final_evaluation.ipynb
-src/
-  preference_parser.py
-  recommender.py
-app/
-  streamlit_app.py
-data/
-  raw/
-  processed/
-models/
-outputs/
-docs/
+"The food was excellent, but the service was slow."
 ```
 
-## Important model decisions
-
-### Aspect Detection
-
-The final development model is a **class-weighted DistilBERT**. The validation-selected evaluation threshold is **0.55**. For the Google Local application pipeline a more conservative **0.65 deployment threshold** is used because 0.55 produced excessive aspect coverage on the target domain.
-
-### Sentiment
-
-The application model uses:
+Expected output:
 
 ```text
-Sentence: <review sentence> Aspect: <aspect category>
+FOOD#QUALITY
+SERVICE#GENERAL
 ```
 
-and predicts `negative`, `neutral` or `positive`. Ambiguous sentence-aspect examples with contradictory polarity labels are excluded during modelling.
+Since multiple aspects may occur in the same sentence, the task is formulated as **multi-label classification**.
 
-### Place profiles
+The model uses:
 
-Seven main recommendation dimensions are used:
+- `distilbert-base-uncased`;
+- 12 SemEval restaurant aspect categories;
+- class-weighted binary cross-entropy;
+- sigmoid outputs;
+- a validation-selected global threshold of **0.55**.
 
-`Food`, `Drinks`, `Service`, `Ambience`, `Price`, `Location`, `Overall`.
+The class-weighted model was selected because the recommendation use case benefits from broader aspect coverage, including less frequent aspect categories.
 
-Low-support scores are shrunk toward a neutral prior of 50:
+---
+
+### 2. Aspect-Level Sentiment Classification
+
+The second Transformer component determines the sentiment associated with a particular aspect.
+
+Input format:
 
 ```text
-adjusted = (support * raw_score + 10 * 50) / (support + 10)
+Sentence: The coffee was excellent but the service was very slow.
+Aspect: DRINKS#QUALITY.
 ```
 
-`Price` means **price/value satisfaction**, not objective cheapness.
-
-### Preference parsing
-
-The final parser is hybrid:
-
-- explicit keyword/phrase rules first;
-- explicit negation such as `price is not important` overrides other signals;
-- venue type is treated as a separate hard filter when requested;
-- Sentence Transformer similarity is only a fallback for unmatched clauses;
-- `Overall` acts mainly as a fallback/stabilizer rather than absorbing generic text.
-
-## Run the recommendation demo
-
-1. Run notebook 05 and copy `place_profiles_wide.csv` to:
+Output:
 
 ```text
-data/processed/place_profiles_wide.csv
+positive
 ```
 
-2. Install dependencies:
+The classifier predicts:
+
+- `negative`
+- `neutral`
+- `positive`
+
+The final application-compatible model deliberately does not require manually annotated target spans.
+
+Its input is therefore:
+
+```text
+sentence + aspect → sentiment
+```
+
+This makes it directly usable on real-world review data.
+
+Ambiguous training examples where the same sentence-aspect pair has contradictory polarity labels are removed during preprocessing.
+
+---
+
+## Data
+
+### Benchmark dataset
+
+Model development and evaluation use:
+
+**SemEval-2016 Task 5 – English Restaurants, Subtask 1**
+
+The official training set is used for:
+
+- training;
+- validation;
+- model selection;
+- threshold selection.
+
+The official gold test set is kept separate for final held-out evaluation.
+
+---
+
+### Application dataset
+
+The application layer uses a selected subset of the:
+
+**Google Local Data (2021)** dataset published by the UCSD McAuley Lab.
+
+The current project sample contains:
+
+- **20 venues**
+- **100 English reviews per venue**
+- approximately **2,000 reviews**
+- more than **7,000 review sentences**
+
+The sample contains:
+
+- 10 restaurants;
+- 5 cafés / coffee places;
+- 5 brunch / breakfast / bakery venues.
+
+The Google Local data is used only as the application domain. The Transformer models are trained on SemEval data.
+
+---
+
+## Place Profiles
+
+Sentence-level aspect and sentiment predictions are aggregated into venue-level profiles.
+
+The recommendation dimensions are:
+
+| Dimension | Underlying information |
+|---|---|
+| Food | Food quality and food style/options |
+| Drinks | Drink quality and drink style/options |
+| Service | Service quality |
+| Ambience | Atmosphere and ambience |
+| Price | Satisfaction with price/value |
+| Location | Location-related sentiment |
+| Overall | General restaurant sentiment |
+
+### Important interpretation of Price
+
+The `Price` dimension represents **sentiment toward price and value for money**.
+
+It does **not** represent objective price level.
+
+Therefore:
+
+```text
+"good value for money"
+```
+
+can be interpreted using the Price dimension, while:
+
+```text
+"I want a cheap restaurant"
+```
+
+cannot reliably be evaluated without additional objective price metadata.
+
+---
+
+## Support Adjustment
+
+Some dimensions have much fewer review observations than others.
+
+To prevent a venue from receiving an extreme score based on only one or two reviews, raw place-profile scores are adjusted using shrinkage toward a neutral prior.
+
+The adjustment uses:
+
+```text
+prior mean = 50
+prior strength = 10
+```
+
+Formula:
+
+```text
+adjusted_score =
+    (support × raw_score + prior_strength × prior_mean)
+    /
+    (support + prior_strength)
+```
+
+As support increases, the adjusted value approaches the observed raw score.
+
+For sparse dimensions, the score remains closer to the neutral value of `50`.
+
+---
+
+## Deployment Threshold
+
+The aspect detector uses two deliberately different thresholds for two different purposes.
+
+### Model evaluation
+
+```text
+threshold = 0.55
+```
+
+This threshold was selected using the SemEval validation set and is used for benchmark evaluation.
+
+### Google Local application
+
+```text
+threshold = 0.65
+```
+
+Manual domain calibration showed that `0.55` produced excessive aspect predictions on real Google Local reviews.
+
+The stricter `0.65` threshold provides more conservative predictions in the deployment domain.
+
+This distinction is intentional:
+
+```text
+0.55 → model validation / benchmark evaluation
+0.65 → application-domain inference
+```
+
+---
+
+## Natural-Language Preference Parsing
+
+The recommendation layer accepts free-text preferences.
+
+Example:
+
+```text
+I want a cozy brunch place with great food and good service.
+Price is not important.
+```
+
+The parser uses a **hybrid approach**.
+
+### Explicit parsing
+
+Clear expressions are mapped directly to recommendation dimensions.
+
+Examples:
+
+```text
+food / cuisine / dishes       → Food
+coffee / wine / drinks        → Drinks
+service / staff / waiter      → Service
+cozy / atmosphere / vibe      → Ambience
+value for money / prices      → Price
+location / neighborhood       → Location
+```
+
+### Negation handling
+
+Explicit negation overrides other signals.
+
+Example:
+
+```text
+Price is not important.
+```
+
+results in:
+
+```text
+Price weight = 0
+```
+
+### Preference strength
+
+Stronger expressions can receive higher raw importance.
+
+For example:
+
+```text
+great food       → stronger Food preference
+good service     → standard Service preference
+```
+
+### Semantic fallback
+
+A Sentence Transformer is used only when a clause cannot be confidently mapped using explicit rules.
+
+Model:
+
+```text
+sentence-transformers/all-MiniLM-L6-v2
+```
+
+This makes the parser more flexible while keeping explicit user preferences transparent and controllable.
+
+---
+
+## Recommendation Algorithm
+
+The parsed user preference is converted into normalized preference weights.
+
+Example:
+
+```text
+Food       0.429
+Service    0.286
+Ambience   0.286
+Price      0.000
+```
+
+A place receives a preference-match score using a weighted combination of its adjusted profile dimensions:
+
+```text
+preference_match =
+Σ preference_weight × place_dimension_score
+```
+
+If the user explicitly requests a venue type such as:
+
+```text
+brunch
+cafe
+restaurant
+```
+
+the venue type is applied as a hard candidate filter.
+
+A small Overall component is used as a stabilizer when Overall is not explicitly part of the user preference:
+
+```text
+recommendation_score =
+0.90 × preference_match
++
+0.10 × Overall_adjusted
+```
+
+The system then returns the highest-ranked venues.
+
+---
+
+## Explainability
+
+Recommendation explanations are generated directly from the matching dimensions rather than from a generative language model.
+
+Example:
+
+```text
+Strongest preference matches –
+Food: 84.9,
+Ambience: 75.2,
+Service: 59.5.
+```
+
+This makes the recommendation process:
+
+- transparent;
+- deterministic;
+- reproducible;
+- easy to audit.
+
+---
+
+## Repository Structure
+
+```text
+restaurant-review-recommender/
+│
+├── README.md
+├── requirements.txt
+├── .gitignore
+│
+├── notebooks/
+│   ├── 01_data_preparation.ipynb
+│   ├── 02_aspect_detection.ipynb
+│   ├── 03_sentiment_application.ipynb
+│   ├── 04_google_local_data_preparation.ipynb
+│   ├── 05_place_profile_generation.ipynb
+│   ├── 06_personalized_recommendation.ipynb
+│   └── 07_final_evaluation.ipynb
+│
+├── src/
+│   ├── preference_parser.py
+│   └── recommender.py
+│
+├── app/
+│   └── streamlit_app.py
+│
+├── data/
+│   ├── raw/
+│   └── processed/
+│
+├── models/
+│
+├── outputs/
+│
+├── docs/
+│   └── architecture.md
+│
+└── tests/
+```
+
+---
+
+## Notebook Workflow
+
+The notebooks follow the complete project pipeline.
+
+### `01_data_preparation.ipynb`
+
+Parses the SemEval XML files and prepares the modelling datasets.
+
+### `02_aspect_detection.ipynb`
+
+Fine-tunes and evaluates the multi-label DistilBERT aspect detector.
+
+### `03_sentiment_application.ipynb`
+
+Builds the application-compatible aspect-level sentiment classifier.
+
+### `04_google_local_data_preparation.ipynb`
+
+Selects and preprocesses the real-world Google Local review sample.
+
+### `05_place_profile_generation.ipynb`
+
+Runs aspect and sentiment inference and creates support-adjusted venue profiles.
+
+### `06_personalized_recommendation.ipynb`
+
+Implements natural-language preference parsing and the personalized recommendation layer.
+
+### `07_final_evaluation.ipynb`
+
+Evaluates the frozen final NLP models on the previously untouched SemEval gold test set.
+
+---
+
+## Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/bsumicz/restaurant-review-recommender.git
+cd restaurant-review-recommender
+```
+
+Create a virtual environment:
+
+```bash
+python -m venv .venv
+```
+
+Activate it on Windows:
+
+```bash
+.venv\Scripts\activate
+```
+
+Install the dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Start the app:
+---
+
+## Running the Application
+
+Once the processed place-profile data is available, start the Streamlit application with:
 
 ```bash
 streamlit run app/streamlit_app.py
 ```
 
-Example query:
+The interface allows the user to enter a natural-language preference and receive personalized Top-N venue recommendations.
 
-> I want a cozy brunch place with great food and good service. Price is not important.
+---
 
-## Evaluation strategy
+## Model Files
 
-Model selection and threshold selection are performed on a review-level validation split of the official SemEval training data. The official SemEval gold test set is reserved for the final held-out evaluation in notebook 07.
+Fine-tuned Transformer model files are intentionally not stored directly in the Git repository.
 
-The final test results should be reported only after notebook 07 has been run; they should not be used for further tuning.
+Typical model artifacts:
 
-## Data and model files
+```text
+aspect_distilbert_weighted.zip
+sentiment_distilbert_application.zip
+```
 
-Large raw datasets and fine-tuned model ZIPs are not committed to normal Git history. See `data/raw/README.md` and `models/README.md`.
+These files can be regenerated from the training notebooks or stored separately using a model/artifact storage solution.
 
-## Status
+---
 
-- [x] SemEval preprocessing
-- [x] Aspect Detection model
-- [x] Application-compatible Sentiment model
-- [x] Google Local review preparation
-- [x] Place profile generation
-- [x] Natural-language personalized recommendation
-- [ ] Final held-out test metrics inserted into documentation
-- [ ] Final report and presentation
+## Evaluation
+
+The project separates model development from final evaluation.
+
+### Validation
+
+The training set is split at review level to prevent sentences belonging to the same review from appearing in both training and validation data.
+
+Validation is used for:
+
+- model comparison;
+- class-weighting experiments;
+- threshold selection;
+- final model selection.
+
+### Final evaluation
+
+The official SemEval gold test set remains untouched during development.
+
+The final frozen models are evaluated once in:
+
+```text
+07_final_evaluation.ipynb
+```
+
+Reported metrics include:
+
+**Aspect Detection**
+
+- micro precision
+- micro recall
+- micro F1
+- macro precision
+- macro recall
+- macro F1
+- per-aspect performance
+
+**Sentiment Classification**
+
+- accuracy
+- macro precision
+- macro recall
+- macro F1
+- weighted F1
+- class-level precision / recall / F1
+- confusion matrix
+
+Final held-out test values will be added here after the final evaluation notebook has been executed.
+
+---
+
+## Application-Domain Sanity Check
+
+The application sentiment model was also checked against Google review star ratings.
+
+The observed pattern is directionally consistent:
+
+- low-rating reviews contain substantially more negative aspect sentiment;
+- high-rating reviews contain substantially more positive aspect sentiment.
+
+This provides an additional external sanity check that the sentiment model transfers meaningfully from the SemEval benchmark domain to the Google Local review domain.
+
+This check is not treated as a substitute for the official SemEval held-out evaluation.
+
+---
+
+## Limitations
+
+The current implementation has several known limitations.
+
+- The Transformer models are trained on SemEval restaurant reviews but applied to Google Local reviews, creating a domain shift.
+- Several SemEval aspect categories have very low support.
+- The neutral sentiment class is rare and therefore difficult to classify reliably.
+- Place profiles depend on the available review sample.
+- The Price profile represents price/value sentiment, not objective affordability.
+- Recommendation evaluation is primarily qualitative because no ground-truth dataset of user preferences and preferred venues is available.
+- The current application contains a limited sample of 20 venues.
+
+---
+
+## Future Improvements
+
+Possible extensions include:
+
+- objective price-level metadata and budget filtering;
+- larger geographical coverage;
+- more venues and more recent review data;
+- user-feedback-based recommendation evaluation;
+- learned ranking models;
+- collaborative or hybrid recommendation;
+- stronger Transformer encoders;
+- model serving through an API;
+- automated model artifact management;
+- experiment tracking and reproducible deployment.
+
+---
+
+## Technology Stack
+
+- Python
+- pandas
+- NumPy
+- PyTorch
+- Hugging Face Transformers
+- DistilBERT
+- Sentence Transformers
+- scikit-learn
+- Streamlit
+- Jupyter / Google Colab
+- Git / GitHub
+
+---
+
+## Project Status
+
+The end-to-end prototype is implemented.
+
+Current pipeline:
+
+```text
+review data
+→ aspect detection
+→ aspect-level sentiment
+→ place profiles
+→ natural-language preference parsing
+→ personalized Top-N recommendation
+```
+
+Final held-out benchmark evaluation and final documentation are the remaining project-completion steps.

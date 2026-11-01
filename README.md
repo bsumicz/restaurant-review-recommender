@@ -587,7 +587,58 @@ Reported metrics include:
 - class-level precision / recall / F1
 - confusion matrix
 
-Final held-out test values will be added here after the final evaluation notebook has been executed.
+### Final held-out test results
+
+The final frozen models were evaluated on the previously untouched SemEval-2016 gold test set.
+
+#### Aspect Detection
+
+| Metric | Test result |
+|---|---:|
+| Micro Precision | 0.4281 |
+| Micro Recall | 0.7699 |
+| Micro F1 | **0.5503** |
+| Macro Precision | 0.3688 |
+| Macro Recall | 0.7506 |
+| Macro F1 | **0.4654** |
+| Subset Accuracy | 0.2617 |
+| Hamming Loss | 0.1214 |
+
+The final aspect detector shows a recall-oriented behavior. Micro Recall reaches **0.770**, while Micro F1 is **0.550**.
+
+Performance is strongest on high-support and recommendation-relevant categories:
+
+| Aspect | F1 | Support |
+|---|---:|---:|
+| FOOD#QUALITY | **0.734** | 226 |
+| RESTAURANT#GENERAL | **0.676** | 142 |
+| SERVICE#GENERAL | **0.660** | 145 |
+| RESTAURANT#PRICES | **0.576** | 21 |
+| FOOD#PRICES | **0.563** | 22 |
+
+Rare categories show lower and less stable performance, mainly due to lower precision. This is consistent with the class-weighted training strategy, which intentionally favors broader aspect coverage.
+
+#### Sentiment Classification
+
+| Metric | Test result |
+|---|---:|
+| Accuracy | **0.8299** |
+| Macro Precision | 0.6550 |
+| Macro Recall | 0.6992 |
+| Macro F1 | **0.6726** |
+| Weighted F1 | **0.8372** |
+
+Per-class performance:
+
+| Sentiment | Precision | Recall | F1 | Support |
+|---|---:|---:|---:|---:|
+| Negative | 0.716 | 0.861 | **0.782** | 187 |
+| Neutral | 0.302 | 0.381 | **0.337** | 42 |
+| Positive | 0.947 | 0.856 | **0.899** | 506 |
+
+The application-compatible sentiment classifier generalizes well to the held-out test set. Positive and negative sentiment are classified reliably, while the rare neutral class remains the main limitation.
+
+The final test set was used only once after model and threshold selection. No further tuning was performed based on these results.
 
 ---
 
@@ -668,4 +719,6 @@ review data
 → personalized Top-N recommendation
 ```
 
-Final held-out benchmark evaluation and final documentation are the remaining project-completion steps.
+The end-to-end prototype and final held-out benchmark evaluation are complete.
+
+Remaining project-completion steps include final reproducibility checks, application testing, documentation, and presentation preparation.

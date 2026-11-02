@@ -56,12 +56,7 @@ if st.button("Recommend", type="primary"):
         st.write("Venue type:", parsed["venue_type"])
         st.write("Ignored dimensions:", parsed["ignored_dimensions"])
         st.write("Budget request detected:", parsed["budget_request"])
-        st.json({k: round(v, 3) for k, v in parsed["weights"].items()})
-        with st.expander("How the preference was parsed"):
-            st.write("Venue type:", parsed["venue_type"])
-            st.write("Ignored dimensions:", parsed["ignored_dimensions"])
-            st.write("Budget request detected:", parsed["budget_request"])
-            st.json({
-                k: round(v, 3)
-                for k, v in parsed["weights"].items()
-            })
+        st.json({
+            k: round(v, 3)
+            for k, v in parsed["weights"].items()
+        })
